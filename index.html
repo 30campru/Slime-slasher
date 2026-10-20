@@ -1,219 +1,130 @@
 <!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>A-Frame: Slime Slasher VR</title>
-  <!-- Load A-Frame Library -->
-  <script src="https://aframe.io"></script>
-  <script>
-    // Global game state tracking
-    let activeSlimesCount = 5;
-    let isGameOver = false;
-
-    // A-Frame Custom Component: Handles slime movement and player collision
-    AFRAME.registerComponent('slime-behavior', {
-      schema: {
-        speed: { type: 'number', default: 1.0 } // Slimes move slowly
-      },
-      init: function () {
-        this.playerEl = document.querySelector('#camera-rig');
-      },
-      tick: function (time, timeDelta) {
-        if (isGameOver) return;
-
-        // Convert delta time to seconds
-        const dt = timeDelta / 1000;
-        const slimePos = this.el.getAttribute('position');
-        const playerPos = this.playerEl.getAttribute('position');
-
-        // Calculate direction vector pointing to the player
-        const dirX = playerPos.x - slimePos.x;
-        const dirZ = playerPos.z - slimePos.z;
-        const distance = Math.sqrt(dirX * dirX + dirZ * dirZ);
-
-        // Game Over condition: Slime reached the player
-        if (distance < 1.5) {
-          triggerGameOver(false);
-          return;
-        }
-
-        // Slowly move towards player position
-        if (distance > 0) {
-          const moveX = (dirX / distance) * this.data.speed * dt;
-          const moveZ = (dirZ / distance) * this.data.speed * dt;
-          this.el.setAttribute('position', {
-            x: slimePos.x + moveX,
-            y: slimePos.y,
-            z: slimePos.z + moveZ
-          });
-        }
-      }
-    });
-
-    // A-Frame Custom Component: Simulates slashing when cursor gazes over a slime
-    AFRAME.registerComponent('slashable', {
-      init: function () {
-        const el = this.el;
-        
-        el.addEventListener('mouseenter', function () {
-          if (isGameOver || el.classList.contains('dead')) return;
-          
-          // Mark slime as dead to prevent re-triggering during the animation
-          el.classList.add('dead');
-          activeSlimesCount--;
-
-          // Trigger a sword slash sound effect/visual representation
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>A-Frame Gaze Slime Defeater</title>
+    <!-- Include the main A-Frame library -->
+    <script src="https://aframe.io/releases/1.8.0/aframe.min.js"></script>
+    <script>
+      // Custom component attached to each slime to handle the interaction
+      AFRAME.registerComponent('defeatable-slime', {
+        init: function () {
+          const el = this.el;
           const sword = document.querySelector('#sword');
-          sword.setAttribute('animation__swing', 'property: rotation; from: -20 -15 -10; to: -40 45 -40; dur: 150; dir: alternate; loop: 1');
 
-          // Defeat animation: scale down to 0 0 0
-          el.removeAttribute('animation__float'); // Stop floating bob
-          el.setAttribute('animation__shrink', {
-            property: 'scale',
-            to: '0 0 0',
-            dur: 400,
-            easing: 'easeInBack'
+          // Triggered when the user stares at the slime for the 5000ms fuse duration
+          el.addEventListener('click', function () {
+            // 1. Play the slash animation on the sword
+            sword.emit('start-slash');
+            
+            // 2. Make the slime shrink down dramatically before disappearing
+            el.setAttribute('animation', {
+              property: 'scale',
+              to: '0 0 0',
+              dur: 300,
+              easing: 'easeInBack'
+            });
+
+            // 3. Completely remove the slime from the scene after the animation completes
+            setTimeout(() => {
+              el.parentNode.removeChild(el);
+            }, 300);
           });
-
-          // Remove slime from scene after animation finishes
-          setTimeout(() => {
-            el.parentNode.removeChild(el);
-            // Check if all slimes are defeated
-            if (activeSlimesCount === 0 && !isGameOver) {
-              triggerGameOver(true);
-            }
-          }, 400);
-        });
-
-        // Reset sword swing animation attribute cleanly
-        document.querySelector('#sword').addEventListener('animationcomplete__swing', function() {
-          this.removeAttribute('animation__swing');
-        });
-      }
-    });
-
-    // UI Handler: Triggers win or lose text screens
-    function triggerGameOver(isWin) {
-      isGameOver = true;
-      const screen = document.querySelector('#game-over-screen');
-      const text = document.querySelector('#game-over-text');
+        }
+      });
+    </script>
+  </head>
+  <body>
+    <a-scene background="color: #1a1a2e">
       
-      if (isWin) {
-        text.setAttribute('value', 'YOU WIN!\nAll slimes defeated.');
-        text.setAttribute('color', '#4cdf4c');
-      } else {
-        text.setAttribute('value', 'GAME OVER!\nA slime reached you.');
-        text.setAttribute('color', '#ff3333');
-      }
-      screen.setAttribute('visible', 'true');
-    }
-  </script>
-</head>
-<body>
+      <!-- Ambient and directional lighting -->
+      
+      
 
-  <a-scene>
-    <!-- Assets Manager -->
-    <a-assets></a-assets>
+      <!-- Grid Floor -->
+      <a-grid src="https://aframe.io" repeat="100 100"></a-grid>
 
-    <!-- Environment/World Setup -->
-    <a-sky color="#1a1a2e"></a-sky>
-    <a-plane position="0 0 0" rotation="-90 0 0" width="100" height="100" color="#16213e"></a-plane>
-    <a-grid width="100" height="100" color="#0f3460" opacity="0.3"></a-grid>
-
-    <!-- Player Rig: Houses Camera, Crosshair Gaze, and the Sword -->
-    
-      <a-camera look-controls wasd-controls="enabled: false">
+      <!-- PLAYER / CAMERA SYSTEM -->
+      <!-- The camera serves as the player's eyes -->
+      
         
-        <!-- Center-screen Cursor (Gaze Controller) -->
-        <a-cursor 
-          id="gaze-cursor"
-          color="#ff2e63"
-          scale="0.8 0.8 0.8"
-          animation__click="property: scale; startEvents: click; from: 0.1 0.1 0.1; to: 0.8 0.8 0.8; dur: 150"
-          animation__fusing="property: scale; startEvents: fusing; from: 0.8 0.8 0.8; to: 0.2 0.2 0.2; dur: 200"
-          raycaster="objects: .slime">
-        </a-cursor>
-
-        <!-- Static Sword Visual Element attached to Player's camera POV -->
+        <!-- The Cursor: Set to trigger a 'click' event if looking at an object for 5000ms -->
         
-          <!-- Hilt -->
-          <a-box position="0 0 0" scale="0.04 0.15 0.04" color="#53354a"></a-box>
-          <a-box position="0 0.07 0" scale="0.18 0.03 0.05" color="#e84545"></a-box>
-          <!-- Blade -->
-          <a-box position="0 0.45 0" scale="0.06 0.7 0.02" color="#b5e2fa"></a-box>
-          <a-cone position="0 0.82 0" scale="0.06 0.1 0.02" color="#b5e2fa" rotation="0 0 0"></a-cone>
+          
+          <!-- Animation to scale down the ring visualizer over 5 seconds to show progression -->
+          <a-animation begin="fusing" easing="linear" attribute="scale" color="#00ffcc"
+                       dur="5000" from="1 1 1" to="0.1 0.1 0.1"></a-animation>
+          <!-- Reset the ring visualizer if looking away -->
+          <a-animation begin="mouseleave" easing="linear" attribute="scale"
+                       dur="100" to="1 1 1"></a-animation>
         
 
-      </a-camera>
-    
+        <!-- THE SWORD -->
+        <!-- Fixed to the bottom right of the camera view -->
+        
+          
+          <!-- Blade Visual Construction -->
+          
+            <!-- Hilt / Guard -->
+            <a-box position="0 0 0" scale="0.15 0.03 0.03" material="color: #8c763d"></a-box>
+            <!-- Handle -->
+            <a-cylinder position="0 -0.1 0" radius="0.015" height="0.15" material="color: #4a3728"></a-cylinder>
+            <!-- Metal Blade -->
+            <a-box position="0 0.3 0" scale="0.04 0.5 0.01" material="color: #d1d5db; metalness: 0.8; roughness: 0.2"></a-box>
+          
 
-    <!-- Game Enemies: Slowly moving Slimes -->
-    <!-- Slime 1 -->
-    
-      <a-sphere color="#4ecca3" radius="0.8" opacity="0.85"></a-sphere>
-      <a-sphere color="#ffffff" radius="0.15" position="-0.25 0.2 0.65">
-        <a-sphere color="#000000" radius="0.06" position="0 0 0.1"></a-sphere>
-      </a-sphere>
-      <a-sphere color="#ffffff" radius="0.15" position="0.25 0.2 0.65">
-        <a-sphere color="#000000" radius="0.06" position="0 0 0.1"></a-sphere>
-      </a-sphere>
-    
+          <!-- Slashing Animation Configuration -->
+          <!-- Rotates rapidly outward when triggered by the 'start-slash' event, then returns -->
+          <a-animation attribute="rotation"
+                       begin="start-slash"
+                       dur="150"
+                       from="0 0 0"
+                       to="20 -60 -40"
+                       direction="alternate"
+                       repeat="1"
+                       easing="easeOutQuad">
+          </a-animation>
+        
 
-    <!-- Slime 2 -->
-    
-      <a-sphere color="#4ecca3" radius="0.8" opacity="0.85"></a-sphere>
-      <a-sphere color="#ffffff" radius="0.15" position="-0.25 0.2 0.65">
-        <a-sphere color="#000000" radius="0.06" position="0 0 0.1"></a-sphere>
-      </a-sphere>
-      <a-sphere color="#ffffff" radius="0.15" position="0.25 0.2 0.65">
-        <a-sphere color="#000000" radius="0.06" position="0 0 0.1"></a-sphere>
-      </a-sphere>
-    
+      
 
-    <!-- Slime 3 -->
-    
-      <a-sphere color="#4ecca3" radius="0.8" opacity="0.85"></a-sphere>
-      <a-sphere color="#ffffff" radius="0.15" position="-0.25 0.2 0.65">
-        <a-sphere color="#000000" radius="0.06" position="0 0 0.1"></a-sphere>
-      </a-sphere>
-      <a-sphere color="#ffffff" radius="0.15" position="0.25 0.2 0.65">
-        <a-sphere color="#000000" radius="0.06" position="0 0 0.1"></a-sphere>
-      </a-sphere>
-    
+      <!-- ENEMIES: THE SLIMES -->
+      <!-- Slime 1 (Center-Left) -->
+      
+        <!-- Main body sphere -->
+        <a-sphere radius="0.5" material="color: #2ecc71; opacity: 0.85; roughness: 0.3" position="0 0 0"></a-sphere>
+        <!-- Left eye -->
+        <a-sphere radius="0.06" material="color: #ffffff" position="-0.15 0.1 0.45">
+          <a-sphere radius="0.03" material="color: #000000" position="0 0 0.04"></a-sphere>
+        </a-sphere>
+        <!-- Right eye -->
+        <a-sphere radius="0.06" material="color: #ffffff" position="0.15 0.1 0.45">
+          <a-sphere radius="0.03" material="color: #000000" position="0 0 0.04"></a-sphere>
+        </a-sphere>
+      
 
-    <!-- Slime 4 -->
-    
-      <a-sphere color="#4ecca3" radius="0.8" opacity="0.85"></a-sphere>
-      <a-sphere color="#ffffff" radius="0.15" position="-0.25 0.2 0.65">
-        <a-sphere color="#000000" radius="0.06" position="0 0 0.1"></a-sphere>
-      </a-sphere>
-      <a-sphere color="#ffffff" radius="0.15" position="0.25 0.2 0.65">
-        <a-sphere color="#000000" radius="0.06" position="0 0 0.1"></a-sphere>
-      </a-sphere>
-    
+      <!-- Slime 2 (Center-Right) -->
+      
+        <a-sphere radius="0.5" material="color: #2ecc71; opacity: 0.85; roughness: 0.3" position="0 0 0"></a-sphere>
+        <a-sphere radius="0.06" material="color: #ffffff" position="-0.15 0.1 0.45">
+          <a-sphere radius="0.03" material="color: #000000" position="0 0 0.04"></a-sphere>
+        </a-sphere>
+        <a-sphere radius="0.06" material="color: #ffffff" position="0.15 0.1 0.45">
+          <a-sphere radius="0.03" material="color: #000000" position="0 0 0.04"></a-sphere>
+        </a-sphere>
+      
 
-    <!-- Slime 5 -->
-    
-      <a-sphere color="#4ecca3" radius="0.8" opacity="0.85"></a-sphere>
-      <a-sphere color="#ffffff" radius="0.15" position="-0.25 0.2 0.65">
-        <a-sphere color="#000000" radius="0.06" position="0 0 0.1"></a-sphere>
-      </a-sphere>
-      <a-sphere color="#ffffff" radius="0.15" position="0.25 0.2 0.65">
-        <a-sphere color="#000000" radius="0.06" position="0 0 0.1"></a-sphere>
-      </a-sphere>
-    
+      <!-- Slime 3 (Far Left) -->
+      
+        <a-sphere radius="0.5" material="color: #2ecc71; opacity: 0.85; roughness: 0.3" position="0 0 0"></a-sphere>
+        <a-sphere radius="0.06" material="color: #ffffff" position="-0.15 0.1 0.45">
+          <a-sphere radius="0.03" material="color: #000000" position="0 0 0.04"></a-sphere>
+        </a-sphere>
+        <a-sphere radius="0.06" material="color: #ffffff" position="0.15 0.1 0.45">
+          <a-sphere radius="0.03" material="color: #000000" position="0 0 0.04"></a-sphere>
+        </a-sphere>
+      
 
-    <!-- Ambient Ambient & Directional Lighting -->
-    <a-light type="ambient" color="#455d7a" intensity="0.6"></a-light>
-    <a-light type="directional" color="#f9a826" intensity="0.8" position="-1 4 2"></a-light>
-
-    <!-- Win/Lose UI Backdrop & Canvas Layout -->
-    
-      <a-plane color="#000000" width="3" height="1.5" opacity="0.85"></a-plane>
-      <a-text id="game-over-text" value="" align="center" width="6" position="0 0 0.01"></a-text>
-    
-
-  </a-scene>
-
-</body>
+    </a-scene>
+  </body>
 </html>
