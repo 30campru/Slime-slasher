@@ -15,14 +15,13 @@
     AFRAME.registerComponent('game-state', {
       init: function () {
         this.el.gameOver = false;
+        this.el.gameWon = false;
       }
     });
 
 
     // ==========================================
     // EYE TRACKING
-    // Pupils follow the player's position.
-    // Attach this to each black pupil.
     // ==========================================
     AFRAME.registerComponent('eye-track-player', {
       schema: {
@@ -59,7 +58,6 @@
           return;
         }
 
-        // Get eye and player positions in world space.
         this.eye.object3D.getWorldPosition(
           this.eyeWorldPosition
         );
@@ -68,12 +66,12 @@
           this.cameraWorldPosition
         );
 
-        // Direction from the eye toward the player.
+        // Direction toward the player.
         this.direction
           .copy(this.cameraWorldPosition)
           .sub(this.eyeWorldPosition);
 
-        // Convert into the eye's local coordinate system.
+        // Convert into the white eye's local coordinates.
         this.eye.object3D.getWorldQuaternion(
           this.eyeQuaternion
         );
@@ -103,7 +101,7 @@
           max
         );
 
-        // Keep pupils on the front surface of the eyes.
+        // Keep the pupil on the front of the white eye.
         const pupilZ = Math.sqrt(
           Math.max(
             0.0001,
@@ -145,7 +143,7 @@
         this.turnThreshold =
           THREE.MathUtils.degToRad(45);
 
-        // Stop turning when almost facing the player.
+        // Finish turning when nearly facing the player.
         this.alignedThreshold =
           THREE.MathUtils.degToRad(2);
       },
@@ -153,7 +151,7 @@
       tick: function (time, delta) {
         const scene = this.el.sceneEl;
 
-        // Freeze slimes after defeat or game over.
+        // Stop movement after a win, loss or defeat.
         if (scene.gameOver || this.defeated) return;
 
         if (!this.camera || !this.camera.object3D) {
@@ -161,7 +159,6 @@
           if (!this.camera) return;
         }
 
-        // Find the player and slime positions.
         this.camera.object3D.getWorldPosition(
           this.cameraPosition
         );
@@ -170,7 +167,6 @@
           this.slimePosition
         );
 
-        // Horizontal distance from slime to player.
         const dx =
           this.cameraPosition.x - this.slimePosition.x;
 
@@ -179,7 +175,7 @@
 
         const distance = Math.sqrt(dx * dx + dz * dz);
 
-        // GAME OVER when a slime catches the player.
+        // GAME OVER when a slime reaches the player.
         if (distance <= this.data.loseDistance) {
           scene.gameOver = true;
 
@@ -198,26 +194,24 @@
 
         const slime = this.el.object3D;
 
-        // The slime's eyes face local positive Z.
-        // Calculate the yaw needed to face the player.
+        // Slime's face points along local positive Z.
         const targetYaw = Math.atan2(dx, dz);
-
         const currentYaw = slime.rotation.y;
 
-        // Find the shortest rotation to the player.
+        // Find the shortest rotation toward the player.
         const angleDifference = Math.atan2(
           Math.sin(targetYaw - currentYaw),
           Math.cos(targetYaw - currentYaw)
         );
 
-        // Begin turning after the player passes 45 degrees.
+        // Begin turning past the 45-degree mark.
         if (
           Math.abs(angleDifference) > this.turnThreshold
         ) {
           this.isTurning = true;
         }
 
-        // Continue turning until the slime faces the player.
+        // Finish the turn smoothly.
         if (this.isTurning) {
           const turnStep =
             THREE.MathUtils.degToRad(
@@ -237,23 +231,20 @@
           }
         }
 
-        // Slowly chase the player.
+        // Chase at this slime's individual speed.
         const step = Math.min(
           this.data.speed * Math.min(delta, 50) / 1000,
           distance - this.data.loseDistance
         );
 
-        slime.position.x +=
-          (dx / distance) * step;
-
-        slime.position.z +=
-          (dz / distance) * step;
+        slime.position.x += (dx / distance) * step;
+        slime.position.z += (dz / distance) * step;
       }
     });
 
 
     // ==========================================
-    // SLIME DEFEAT SYSTEM
+    // SLIME DEFEAT AND WIN DETECTION
     // ==========================================
     AFRAME.registerComponent('defeatable-slime', {
       init: function () {
@@ -261,13 +252,14 @@
         this.defeated = false;
 
         el.addEventListener('click', () => {
-          if (this.defeated || el.sceneEl.gameOver) {
-            return;
-          }
+          const scene = el.sceneEl;
+
+          // Ignore clicks after a win, loss or prior defeat.
+          if (this.defeated || scene.gameOver) return;
 
           this.defeated = true;
 
-          // Stop this slime from chasing and turning.
+          // Stop this slime chasing and turning.
           const chase = el.components['slime-chase'];
 
           if (chase) {
@@ -276,7 +268,7 @@
 
           el.removeAttribute('slime-chase');
 
-          // Play the sword slash.
+          // Play the sword slash animation.
           const sword = document.querySelector('#sword');
 
           if (sword) {
@@ -292,10 +284,42 @@
             easing: 'easeInBack'
           });
 
-          // Remove the defeated slime.
+          // Check whether every slime has been defeated.
+          const allSlimes = Array.from(
+            document.querySelectorAll('[defeatable-slime]')
+          );
+
+          const isLastSlime =
+            allSlimes.length > 0 &&
+            allSlimes.every((slime) => {
+              const component =
+                slime.components['defeatable-slime'];
+
+              return component && component.defeated;
+            });
+
+          // Lock the game immediately once the final
+          // slime is defeated, so a loss cannot override the win.
+          if (isLastSlime) {
+            scene.gameOver = true;
+            scene.gameWon = true;
+          }
+
+          // Remove the slime after its defeat animation.
           setTimeout(() => {
             if (el.parentNode) {
               el.parentNode.removeChild(el);
+            }
+
+            // Show the victory screen after the final defeat.
+            if (isLastSlime) {
+              const winScreen = document.getElementById(
+                'win-screen'
+              );
+
+              if (winScreen) {
+                winScreen.style.display = 'flex';
+              }
             }
           }, 350);
         });
@@ -372,14 +396,12 @@
           dur: 180;
           easing: easeInOutQuad">
 
-        <!-- Sword guard -->
         <a-box
           position="0 0 0"
           scale="0.15 0.03 0.03"
           material="color: #8c763d">
         </a-box>
 
-        <!-- Sword handle -->
         <a-cylinder
           position="0 -0.1 0"
           radius="0.015"
@@ -387,7 +409,6 @@
           material="color: #4a3728">
         </a-cylinder>
 
-        <!-- Sword blade -->
         <a-box
           position="0 0.3 0"
           scale="0.04 0.5 0.01"
@@ -402,7 +423,7 @@
 
 
     <!-- ======================================
-         SLIME 1
+         SLIME 1 - SPEED 1
          ====================================== -->
     <a-entity
       position="-1.3 0 -3"
@@ -430,7 +451,6 @@
           material="color: #000000"
           eye-track-player>
         </a-sphere>
-
       </a-sphere>
 
       <!-- Right eye -->
@@ -445,14 +465,13 @@
           material="color: #000000"
           eye-track-player>
         </a-sphere>
-
       </a-sphere>
 
     </a-entity>
 
 
     <!-- ======================================
-         SLIME 2
+         SLIME 2 - SPEED 1.5
          ====================================== -->
     <a-entity
       position="0 0 -3"
@@ -480,7 +499,6 @@
           material="color: #000000"
           eye-track-player>
         </a-sphere>
-
       </a-sphere>
 
       <!-- Right eye -->
@@ -495,14 +513,13 @@
           material="color: #000000"
           eye-track-player>
         </a-sphere>
-
       </a-sphere>
 
     </a-entity>
 
 
     <!-- ======================================
-         SLIME 3
+         SLIME 3 - SPEED 0.5
          ====================================== -->
     <a-entity
       position="1.3 0 -3"
@@ -530,7 +547,6 @@
           material="color: #000000"
           eye-track-player>
         </a-sphere>
-
       </a-sphere>
 
       <!-- Right eye -->
@@ -545,7 +561,6 @@
           material="color: #000000"
           eye-track-player>
         </a-sphere>
-
       </a-sphere>
 
     </a-entity>
@@ -563,7 +578,7 @@
       position: fixed;
       inset: 0;
       z-index: 99999;
-      background: rgba(10, 10, 25, 0.92);
+      background: rgba(10, 10, 25, 0.94);
       color: white;
       font-family: Arial, sans-serif;
       text-align: center;
@@ -596,6 +611,74 @@
         border: none;
         border-radius: 10px;
         cursor: pointer;
+      ">
+      PLAY AGAIN
+    </button>
+
+  </div>
+
+
+  <!-- ========================================
+       VICTORY SCREEN
+       ======================================== -->
+  <div
+    id="win-screen"
+    style="
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 100000;
+      background: rgba(8, 25, 30, 0.95);
+      color: white;
+      font-family: Arial, sans-serif;
+      text-align: center;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      padding: 20px;
+      box-sizing: border-box;
+    ">
+
+    <h1
+      style="
+        font-size: clamp(48px, 9vw, 76px);
+        color: #39ff9c;
+        margin: 0 0 12px;
+        text-shadow: 0 0 18px rgba(57, 255, 156, 0.4);
+      ">
+      YOU WIN!
+    </h1>
+
+    <p
+      style="
+        font-size: clamp(20px, 4vw, 28px);
+        margin: 8px;
+      ">
+      All slimes defeated!
+    </p>
+
+    <p
+      style="
+        font-size: 18px;
+        color: #b9f7d8;
+        margin: 8px 0 20px;
+      ">
+      You're the ultimate Slime Slasher!
+    </p>
+
+    <button
+      onclick="location.reload()"
+      style="
+        font-size: 22px;
+        font-weight: bold;
+        padding: 15px 32px;
+        margin-top: 15px;
+        background: #39ff9c;
+        color: #10251c;
+        border: none;
+        border-radius: 12px;
+        cursor: pointer;
+        box-shadow: 0 0 20px rgba(57, 255, 156, 0.25);
       ">
       PLAY AGAIN
     </button>
